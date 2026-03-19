@@ -16,6 +16,7 @@ if (session_status() === PHP_SESSION_NONE) {
     <nav class="menu">
         <a href="admin_page.php" class="<?= basename($_SERVER['PHP_SELF']) === 'admin_page.php' ? 'active' : '' ?>">🏠 Home</a>
         <a href="admin_products.php" class="<?= basename($_SERVER['PHP_SELF']) === 'admin_products.php' ? 'active' : '' ?>">🧴 Products</a>
+        <a href="admin_inventory.php" class="<?= basename($_SERVER['PHP_SELF']) === 'admin_inventory.php' ? 'active' : '' ?>">🧴 Inventory </a>
         <a href="admin_services.php" class="<?= basename($_SERVER['PHP_SELF']) === 'admin_services.php' ? 'active' : '' ?>">💆 Services</a>
         <a href="admin_bookings.php" class="<?= basename($_SERVER['PHP_SELF']) === 'admin_bookings.php' ? 'active' : '' ?>">🧾 Bookings</a>
         <a href="admin_add-account.php" class="<?= basename($_SERVER['PHP_SELF']) === 'admin_add-account.php' ? 'active' : '' ?>">👤 Add Account </a>
