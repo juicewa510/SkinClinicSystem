@@ -3,6 +3,7 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+
 ?>
 
 <aside class="sidebar">
@@ -16,6 +17,7 @@ if (session_status() === PHP_SESSION_NONE) {
     <nav class="menu">
         <a href="staff_page.php" class="<?= basename($_SERVER['PHP_SELF']) === 'staff_page.php' ? 'active' : '' ?>">🏠 Home</a>
         <a href="staff_products.php" class="<?= basename($_SERVER['PHP_SELF']) === 'staff_products.php' ? 'active' : '' ?>">🧴 Products</a>
+        <a href="staff_inventory.php" class="<?= basename($_SERVER['PHP_SELF']) === 'staff_inventory.php' ? 'active' : '' ?>">🧴 Inventory </a>
         <a href="staff_services.php" class="<?= basename($_SERVER['PHP_SELF']) === 'staff_services.php' ? 'active' : '' ?>">💆 Services</a>
         <a href="staff_bookings.php" class="<?= basename($_SERVER['PHP_SELF']) === 'staff_bookings.php' ? 'active' : '' ?>">🧾 Bookings</a>
         <a href="staff_profile.php" class="<?= basename($_SERVER['PHP_SELF']) === 'staff_profile.php' ? 'active' : '' ?>">👤 Profile</a>
