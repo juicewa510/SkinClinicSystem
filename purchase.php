@@ -35,25 +35,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($quantity <= 0 || $quantity > $product['quantity']) {
         echo "<script>alert('Invalid quantity.');</script>";
     } else {
+        $total = $product['selling_price'] * $quantity;
+        $payment_method = $_POST['payment_method'];
+
         $stmt = $conn->prepare("
-            INSERT INTO purchases (product_id, user_id, quantity, shipping_address)
-            VALUES (?, ?, ?, ?)
-        ");
-        $stmt->bind_param("iiis", $product_id, $user_id, $quantity, $address);
+            INSERT INTO purchases 
+            (product_id, user_id, quantity, total_price, shipping_address, payment_method)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ");
+
+        $stmt->bind_param("iiidss", $product_id, $user_id, $quantity, $total, $address, $payment_method);
 
         if ($stmt->execute()) {
-            // Reduce product stock
+
+            $purchase_id = $stmt->insert_id;
+
+            // Deduct stock
             $conn->query("UPDATE products SET quantity = quantity - $quantity WHERE product_id = $product_id");
 
             echo "
             <script>
+                window.location.href = 'receipt.php?id=$purchase_id';
                 alert('🎉 Purchase successful!');
-                window.location.href = 'patient_store.php';
             </script>
             ";
+
         } else {
             echo "<script>alert('Error processing purchase.');</script>";
         }
+        
     }
 }
 ?>
@@ -133,6 +143,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <label>Shipping Address</label>
             <textarea name="address" required><?= htmlspecialchars($user['address'] ?? '') ?></textarea>
+
+            <label>Payment Method</label>
+            <select name="payment_method" required>
+                <option value="">-- Select Payment --</option>
+                <option value="Cash on Delivery">Cash on Delivery</option>
+                <option value="GCash">GCash</option>
+                <option value="Maya">Maya</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+            </select>
 
             <button type="submit">Confirm Purchase</button>
         </form>
