@@ -5,7 +5,7 @@ include 'config.php';
 // --- DELETE SERVICE ---
 if (isset($_POST['delete_service'])) {
     $id = $_POST['service_id'];
-    $conn->query("DELETE FROM services WHERE service_id = $service_id");
+    $conn->query("DELETE FROM services WHERE service_id = $id");
 }
 
 // --- UPDATE SERVICE ---
@@ -29,18 +29,30 @@ if (isset($_POST['update_service'])) {
 
 // --- ADD SERVICE ---
 if (isset($_POST['add_service'])) {
-    $service_id = $_POST['service_id'];
     $name = $_POST['name'];
     $desc = $_POST['description'];
     $price = $_POST['price'];
     $status = $_POST['status'];
-
     $imgName = $_FILES['image']['name'];
     $tmp = $_FILES['image']['tmp_name'];
     move_uploaded_file($tmp, "uploads/" . $imgName);
 
     $conn->query("INSERT INTO services (name, description, price, image, status) 
                   VALUES ('$name', '$desc', '$price', '$imgName', '$status')");
+    
+    $service_id = $conn->insert_id;
+
+    if(isset($_POST['products'])){
+        foreach($_POST['products'] as $prod_id){
+
+            $qty = $_POST['qty_'.$prod_id];
+
+            $conn->query("
+            INSERT INTO service_products (service_id, product_id, quantity_used)
+            VALUES ($service_id, $prod_id, $qty)
+            ");
+        }
+    }
 }
 
 // Fetch all services
@@ -205,6 +217,21 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
                     <option value="available">Available</option>
                     <option value="not available">Not Available</option>
                 </select>
+
+                <label>Select Products Used</label>
+
+                <?php
+                $products = $conn->query("SELECT product_id, product_name FROM products");
+                while($p = $products->fetch_assoc()):
+                ?>
+
+                <div>
+                    <input type="checkbox" name="products[]" value="<?= $p['product_id'] ?>">
+                    <?= $p['product_name'] ?>
+                    Qty: <input type="number" name="qty_<?= $p['product_id'] ?>" min="1" value="1">
+                </div>
+
+                <?php endwhile; ?>
 
                 <button type="submit" name="add_service">Add Service</button>
             </form>
