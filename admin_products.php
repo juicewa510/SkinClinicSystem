@@ -69,22 +69,43 @@ if (isset($_POST['add_product'])) {
     $tmp = $_FILES['image']['tmp_name'];
     move_uploaded_file($tmp, "uploads/" . $imgName);
 
-    $conn->query("INSERT INTO products 
+    // ✅ PREPARED STATEMENT (SAFE)
+    $stmt = $conn->prepare("INSERT INTO products 
         (product_name, description, category, brand, supplier, batch_number, quantity, reorder_level,
         cost_price, selling_price, expiry_date, storage_location, status, date_added, image)
-        VALUES ('$name', '$desc', '$category', '$brand', '$supplier', '$batch_number', '$quantity',
-        '$reorder_level', '$cost_price', '$selling_price', '$expiry_date', '$storage_location',
-        '$status', NOW(), '$imgName')");
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)");
+
+    $stmt->bind_param(
+        "ssssssiidddsss",
+        $name,
+        $desc,
+        $category,
+        $brand,
+        $supplier,
+        $batch_number,
+        $quantity,
+        $reorder_level,
+        $cost_price,
+        $selling_price,
+        $expiry_date,
+        $storage_location,
+        $status,
+        $imgName
+    );
+
+    if (!$stmt->execute()) {
+        die("Insert failed: " . $stmt->error);
+    }
 }
 
 // Fetch all products
 $result = $conn->query("SELECT * FROM products");
 
 // Include sidebar based on role
-if (isset($_SESSION['role']) && $_SESSION['role'] === 'staff') {
-    include 'sidebar_staff.php';
-} else {
+if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
     include 'sidebar_admin.php';
+} else {
+    include 'sidebar_staff.php';
 }
 ?>
 
