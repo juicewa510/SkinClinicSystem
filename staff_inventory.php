@@ -16,23 +16,43 @@ ADD STOCK
 ===================== */
 if(isset($_POST['add_stock'])){
 
-$id = intval($_POST['product_id']);
-$qty = intval($_POST['quantity']);
+    $id = intval($_POST['product_id']);
+    $qty = intval($_POST['quantity']);
+    $expiry = $_POST['expiry_date'];
 
-$conn->query("
-UPDATE products 
-SET quantity = quantity + $qty
-WHERE product_id = $id
-");
+    // 1. UPDATE STOCK
+    $conn->query("
+        UPDATE products 
+        SET quantity = quantity + $qty
+        WHERE product_id = $id
+    ");
 
-header("Location: ".$_SERVER['PHP_SELF']);
-exit();
+    // 2. SAVE LOG WITH EXPIRY
+    $conn->query("
+        INSERT INTO inventory_logs (product_id, quantity, type, expiry_date, created_at)
+        VALUES ($id, $qty, 'IN', '$expiry', NOW())
+    ");
+
+
+    header("Location: ".$_SERVER['PHP_SELF']);
+    exit();
 }
 
 /* =====================
 GET PRODUCTS
 ===================== */
-$products = $conn->query("SELECT * FROM products ORDER BY product_name ASC");
+$products = $conn->query("
+SELECT 
+    p.*,
+    MAX(l.created_at) AS last_added,
+    MIN(l.expiry_date) AS oldest_expiry,
+    MAX(l.expiry_date) AS newest_expiry
+FROM products p
+LEFT JOIN inventory_logs l 
+    ON p.product_id = l.product_id AND l.type = 'IN'
+GROUP BY p.product_id
+ORDER BY p.product_name ASC
+");
 
 include 'sidebar_staff.php';
 ?>
@@ -81,7 +101,10 @@ echo "</div>";
 <th>Stock</th>
 <th>Reorder</th>
 <th>Status</th>
-<th>Add Stock</th>
+<th>Last Added</th>
+<th>Old Stock Expiry</th>
+<th>New Stock Expiry</th>
+<th>Add Stock (Qty + Expiry)</th>
 </tr>
 
 <?php while($row = $products->fetch_assoc()): ?>
@@ -104,9 +127,22 @@ echo "In Stock";
 </td>
 
 <td>
+<?= $row['last_added'] ? date("Y-m-d H:i", strtotime($row['last_added'])) : '—' ?>
+</td>
+
+<td>
+<?= $row['oldest_expiry'] ? $row['oldest_expiry'] : '—' ?>
+</td>
+
+<td>
+<?= $row['newest_expiry'] ? $row['newest_expiry'] : '—' ?>
+</td>
+
+<td>
 <form method="POST">
 <input type="hidden" name="product_id" value="<?= $row['product_id'] ?>">
 <input type="number" name="quantity" required min="1" style="width:60px;">
+<input type="date" name="expiry_date" required style="width:140px;">
 <button name="add_stock" class="add-btn">Add</button>
 </form>
 </td>
