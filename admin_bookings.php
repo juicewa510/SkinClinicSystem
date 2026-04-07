@@ -11,81 +11,94 @@ if (!isset($_SESSION['role']) ||
     exit();
 }
 
-/* -------------------------
-AUTO COMPLETE APPOINTMENTS
---------------------------*/
-$conn->query("
-UPDATE appointments 
-SET status='Completed'
+/* =========================================
+AUTO COMPLETE + AUTO DEDUCT INVENTORY
+========================================= */
+
+/*
+Logic:
+- If Approved AND time passed + 1 hour → Completed
+- Then deduct products (ONLY ONCE)
+*/
+
+$appointments = $conn->query("
+SELECT appointment_id, service_id 
+FROM appointments
 WHERE status='Approved'
-AND TIMESTAMP(appointment_date, appointment_time) < NOW()
+AND TIMESTAMP(appointment_date, appointment_time) <= (NOW() - INTERVAL 1 HOUR)
 ");
 
-/* -------------------------
-UPDATE STATUS + INVENTORY
---------------------------*/
-if(isset($_POST['update_status'])){
+while($appt = $appointments->fetch_assoc()){
 
-$id = intval($_POST['appointment_id']);
-$status = $_POST['status'];
+    $appointment_id = $appt['appointment_id'];
+    $service_id = $appt['service_id'];
 
-/* GET CURRENT STATUS */
-$check = $conn->prepare("SELECT status FROM appointments WHERE appointment_id=?");
-$check->bind_param("i",$id);
-$check->execute();
-$res = $check->get_result();
-$row = $res->fetch_assoc();
+    /* 1. UPDATE STATUS TO COMPLETED */
+    $conn->query("
+    UPDATE appointments 
+    SET status='Completed'
+    WHERE appointment_id = $appointment_id
+    ");
 
-/* PREVENT EDITING CANCELLED */
-if($row['status'] == "Cancelled"){
-    exit("This booking was cancelled by the patient.");
-}
+    /* 2. DEDUCT PRODUCTS (ONLY IF NOT YET DEDUCTED) */
 
-/* UPDATE STATUS */
-$stmt = $conn->prepare("UPDATE appointments SET status=? WHERE appointment_id=?");
-$stmt->bind_param("si",$status,$id);
-$stmt->execute();
+    // Check if already deducted
+    $check = $conn->query("
+    SELECT * FROM inventory_logs 
+    WHERE appointment_id = $appointment_id
+    ");
 
-/* =========================================
-AUTO DEDUCT PRODUCTS WHEN COMPLETED
-========================================= */
-if($status == "Completed" && $row['status'] != "Completed"){
+    if($check->num_rows == 0){
 
-    // GET SERVICE ID
-    $getService = $conn->prepare("SELECT service_id FROM appointments WHERE appointment_id=?");
-    $getService->bind_param("i",$id);
-    $getService->execute();
-    $serviceResult = $getService->get_result();
-    $serviceData = $serviceResult->fetch_assoc();
-
-    $service_id = $serviceData['service_id'];
-
-    // GET PRODUCTS USED IN SERVICE
-    $products = $conn->prepare("
+        // Get products used in this service
+        $products = $conn->query("
         SELECT product_id, quantity_used 
         FROM service_products 
-        WHERE service_id = ?
-    ");
-    $products->bind_param("i",$service_id);
-    $products->execute();
-    $productResult = $products->get_result();
-
-    // DEDUCT STOCK
-    while($prod = $productResult->fetch_assoc()){
-
-        $conn->query("
-        UPDATE products 
-        SET quantity = quantity - ".$prod['quantity_used']."
-        WHERE product_id = ".$prod['product_id']."
-        AND quantity >= ".$prod['quantity_used']."
+        WHERE service_id = $service_id
         ");
 
+        while($prod = $products->fetch_assoc()){
+
+            $product_id = $prod['product_id'];
+            $qty = $prod['quantity_used'];
+
+            // Deduct stock safely
+            $conn->query("
+            UPDATE products 
+            SET quantity = quantity - $qty
+            WHERE product_id = $product_id
+            AND quantity >= $qty
+            ");
+
+            // Log deduction (IMPORTANT to avoid duplicate)
+            $conn->query("
+            INSERT INTO inventory_logs (product_id, quantity, type, appointment_id, created_at)
+            VALUES ($product_id, $qty, 'OUT', $appointment_id, NOW())
+            ");
+        }
     }
 }
 
-/* REFRESH PAGE */
-header("Location: ".$_SERVER['PHP_SELF']);
-exit();
+/* -------------------------
+UPDATE STATUS (APPROVE ONLY)
+--------------------------*/
+if(isset($_POST['update_status'])){
+
+    $id = intval($_POST['appointment_id']);
+    $status = $_POST['status'];
+
+    // Prevent editing cancelled
+    $check = $conn->query("SELECT status FROM appointments WHERE appointment_id=$id");
+    $row = $check->fetch_assoc();
+
+    if($row['status'] == "Cancelled"){
+        exit("This booking was cancelled.");
+    }
+
+    $conn->query("UPDATE appointments SET status='$status' WHERE appointment_id=$id");
+
+    header("Location: ".$_SERVER['PHP_SELF']);
+    exit();
 }
 
 /* -------------------------
@@ -109,7 +122,7 @@ ORDER BY a.appointment_date DESC, a.appointment_time DESC
 
 $result = $conn->query($query);
 
-include 'sidebar_admin.php';
+include 'sidebar_staff.php';
 ?>
 
 <!DOCTYPE html>
@@ -120,44 +133,37 @@ include 'sidebar_admin.php';
 <link rel="stylesheet" href="users_style.css">
 
 <style>
-
 table{
 width:100%;
 border-collapse:collapse;
 }
-
 th,td{
 padding:10px;
 border:1px solid #ddd;
 text-align:center;
 }
-
 th{
 background:#80a833;
 color:white;
 }
-
 tr:hover{
 background:#f5f5f5;
 cursor:pointer;
 }
 
-/* STATUS BADGE */
-
+/* STATUS */
 .badge{
 padding:5px 10px;
 border-radius:5px;
 color:white;
 font-size:13px;
 }
-
 .pending{background:orange;}
 .approved{background:green;}
 .completed{background:#007bff;}
 .cancelled{background:red;}
 
 /* MODAL */
-
 .modal{
 display:none;
 position:fixed;
@@ -167,7 +173,6 @@ width:100%;
 height:100%;
 background:rgba(0,0,0,0.6);
 }
-
 .modal-content{
 background:white;
 width:400px;
@@ -176,13 +181,11 @@ padding:20px;
 border-radius:10px;
 text-align:center;
 }
-
 .close{
 float:right;
 font-size:22px;
 cursor:pointer;
 }
-
 button{
 padding:8px 15px;
 border:none;
@@ -190,29 +193,21 @@ border-radius:5px;
 margin:5px;
 cursor:pointer;
 }
-
 .approve-btn{
 background:#28a745;
 color:white;
 }
-
-.complete-btn{
-background:#007bff;
-color:white;
-}
-
 </style>
 
 </head>
 
-<body style="background:#fff;">
+<body>
 
 <div class="main">
 
 <h2>All Appointments</h2>
 
 <table>
-
 <tr>
 <th>ID</th>
 <th>Patient</th>
@@ -290,25 +285,20 @@ echo "<span class='badge cancelled'>Cancelled</span>";
 <p><b>Status:</b> <span id="m_status"></span></p>
 
 <form method="POST">
-
 <input type="hidden" name="appointment_id" id="appointment_id">
 <input type="hidden" name="status" id="status_value">
 
 <div id="actionButtons">
-
 <button type="submit" name="update_status"
 class="approve-btn"
 onclick="setStatus('Approved')">
 Approve
 </button>
-
-
 </div>
 
 </form>
 
 </div>
-
 </div>
 
 <script>
@@ -327,13 +317,11 @@ document.getElementById("m_status").innerText=status;
 
 document.getElementById("appointment_id").value=id;
 
-/* hide buttons if cancelled or completed */
 if(status === "Cancelled" || status === "Completed"){
 document.getElementById("actionButtons").style.display="none";
 }else{
 document.getElementById("actionButtons").style.display="block";
 }
-
 }
 
 function closeModal(){
