@@ -12,14 +12,8 @@ if (!isset($_SESSION['role']) ||
 }
 
 /* =========================================
-AUTO COMPLETE + AUTO DEDUCT INVENTORY
+AUTO COMPLETE + FIFO INVENTORY DEDUCTION
 ========================================= */
-
-/*
-Logic:
-- If Approved AND time passed + 1 hour → Completed
-- Then deduct products (ONLY ONCE)
-*/
 
 $appointments = $conn->query("
 SELECT appointment_id, service_id 
@@ -40,9 +34,7 @@ while($appt = $appointments->fetch_assoc()){
     WHERE appointment_id = $appointment_id
     ");
 
-    /* 2. DEDUCT PRODUCTS (ONLY IF NOT YET DEDUCTED) */
-
-    // Check if already deducted
+    /* 2. DEDUCT PRODUCTS (ONLY ONCE) */
     $check = $conn->query("
     SELECT * FROM inventory_logs 
     WHERE appointment_id = $appointment_id
@@ -50,7 +42,6 @@ while($appt = $appointments->fetch_assoc()){
 
     if($check->num_rows == 0){
 
-        // Get products used in this service
         $products = $conn->query("
         SELECT product_id, quantity_used 
         FROM service_products 
@@ -62,15 +53,63 @@ while($appt = $appointments->fetch_assoc()){
             $product_id = $prod['product_id'];
             $qty = $prod['quantity_used'];
 
-            // Deduct stock safely
+            $remaining = $qty;
+
+            // 🔥 FIFO: GET OLDEST STOCK FIRST
+            $stocks = $conn->query("
+                SELECT * FROM inventory_logs
+                WHERE product_id = $product_id
+                AND type = 'IN'
+                AND quantity > 0
+                ORDER BY expiry_date ASC
+            ");
+
+            while($stock = $stocks->fetch_assoc()){
+
+                if($remaining <= 0) break;
+
+                $stock_id = $stock['id'];
+                $available = $stock['quantity'];
+
+                if($available <= 0) continue;
+
+                if($available >= $remaining){
+
+                    // deduct partial
+                    $conn->query("
+                    UPDATE inventory_logs
+                    SET quantity = quantity - $remaining
+                    WHERE id = $stock_id
+                    ");
+
+                    $remaining = 0;
+
+                } else {
+
+                    // consume whole batch
+                    $conn->query("
+                    UPDATE inventory_logs
+                    SET quantity = 0
+                    WHERE id = $stock_id
+                    ");
+
+                    $remaining -= $available;
+                }
+            }
+
+            // ❗ Not enough stock protection
+            if($remaining > 0){
+                continue;
+            }
+
+            // Update total quantity (for UI display)
             $conn->query("
             UPDATE products 
             SET quantity = quantity - $qty
             WHERE product_id = $product_id
-            AND quantity >= $qty
             ");
 
-            // Log deduction (IMPORTANT to avoid duplicate)
+            // Log OUT
             $conn->query("
             INSERT INTO inventory_logs (product_id, quantity, type, appointment_id, created_at)
             VALUES ($product_id, $qty, 'OUT', $appointment_id, NOW())
@@ -87,7 +126,6 @@ if(isset($_POST['update_status'])){
     $id = intval($_POST['appointment_id']);
     $status = $_POST['status'];
 
-    // Prevent editing cancelled
     $check = $conn->query("SELECT status FROM appointments WHERE appointment_id=$id");
     $row = $check->fetch_assoc();
 
@@ -122,7 +160,7 @@ ORDER BY a.appointment_date DESC, a.appointment_time DESC
 
 $result = $conn->query($query);
 
-include 'sidebar_staff.php';
+include 'sidebar_admin.php';
 ?>
 
 <!DOCTYPE html>
@@ -151,7 +189,6 @@ background:#f5f5f5;
 cursor:pointer;
 }
 
-/* STATUS */
 .badge{
 padding:5px 10px;
 border-radius:5px;
@@ -163,7 +200,6 @@ font-size:13px;
 .completed{background:#007bff;}
 .cancelled{background:red;}
 
-/* MODAL */
 .modal{
 display:none;
 position:fixed;
@@ -266,10 +302,7 @@ echo "<span class='badge cancelled'>Cancelled</span>";
 
 </div>
 
-<!-- MODAL -->
-
 <div id="bookingModal" class="modal">
-
 <div class="modal-content">
 
 <span class="close" onclick="closeModal()">&times;</span>
