@@ -4,49 +4,37 @@ include 'config.php';
 
 // --- DELETE PRODUCT ---
 if (isset($_POST['delete_product'])) {
-    $product_id = $_POST['product_id'];
+    $product_id = intval($_POST['product_id']);
     $conn->query("DELETE FROM products WHERE product_id = $product_id");
 }
 
 // --- UPDATE PRODUCT ---
 if (isset($_POST['update_product'])) {
-    $product_id = $_POST['product_id'];
+    $product_id = intval($_POST['product_id']);
     $name = $_POST['product_name'];
     $desc = $_POST['description'];
     $category = $_POST['category'];
     $brand = $_POST['brand'];
     $supplier = $_POST['supplier'];
     $batch_number = $_POST['batch_number'];
-    $quantity = $_POST['quantity'];
-    $reorder_level = $_POST['reorder_level'];
     $cost_price = $_POST['cost_price'];
     $selling_price = $_POST['selling_price'];
-    $expiry_date = $_POST['expiry_date'];
     $storage_location = $_POST['storage_location'];
     $status = $_POST['status'];
 
-
-    // If a new image is uploaded
-    if (!empty($_FILES['image']['name'])) {
-        $imgName = $_FILES['image']['name'];
-        $tmp = $_FILES['image']['tmp_name'];
-        move_uploaded_file($tmp, "uploads/" . $imgName);
-
-        $conn->query("UPDATE products 
-            SET product_name='$name', description='$desc', category='$category', brand='$brand',
-                supplier='$supplier', batch_number='$batch_number', quantity='$quantity',
-                reorder_level='$reorder_level', cost_price='$cost_price', selling_price='$selling_price',
-                expiry_date='$expiry_date', storage_location='$storage_location', status='$status',
-                image='$imgName'
-            WHERE product_id=$product_id");
-    } else {
-        $conn->query("UPDATE products 
-            SET product_name='$name', description='$desc', category='$category', brand='$brand',
-                supplier='$supplier', batch_number='$batch_number', quantity='$quantity',
-                reorder_level='$reorder_level', cost_price='$cost_price', selling_price='$selling_price',
-                expiry_date='$expiry_date', storage_location='$storage_location', status='$status'
-            WHERE product_id=$product_id");
-    }
+    // ❗ DO NOT UPDATE quantity, reorder, expiry, image
+    $conn->query("UPDATE products 
+        SET product_name='$name',
+            description='$desc',
+            category='$category',
+            brand='$brand',
+            supplier='$supplier',
+            batch_number='$batch_number',
+            cost_price='$cost_price',
+            selling_price='$selling_price',
+            storage_location='$storage_location',
+            status='$status'
+        WHERE product_id=$product_id");
 }
 
 // --- ADD PRODUCT ---
@@ -69,37 +57,25 @@ if (isset($_POST['add_product'])) {
     $tmp = $_FILES['image']['tmp_name'];
     move_uploaded_file($tmp, "uploads/" . $imgName);
 
-    // ✅ PREPARED STATEMENT (SAFE)
-    $stmt = $conn->prepare("INSERT INTO products 
-        (product_name, description, category, brand, supplier, batch_number, quantity, reorder_level,
-        cost_price, selling_price, expiry_date, storage_location, status, date_added, image)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)");
+    $conn->query("INSERT INTO products 
+    (product_name, description, category, brand, supplier, batch_number, quantity, reorder_level,
+    cost_price, selling_price, expiry_date, storage_location, status, date_added, image)
+    VALUES 
+    ('$name','$desc','$category','$brand','$supplier','$batch_number','$quantity','$reorder_level',
+    '$cost_price','$selling_price','$expiry_date','$storage_location','$status',NOW(),'$imgName')");
 
-    $stmt->bind_param(
-        "ssssssiidddsss",
-        $name,
-        $desc,
-        $category,
-        $brand,
-        $supplier,
-        $batch_number,
-        $quantity,
-        $reorder_level,
-        $cost_price,
-        $selling_price,
-        $expiry_date,
-        $storage_location,
-        $status,
-        $imgName
-    );
+    
+    $product_id = $conn->insert_id;
 
-    if (!$stmt->execute()) {
-        die("Insert failed: " . $stmt->error);
-    }
+    $conn->query("
+    INSERT INTO inventory_logs (product_id, quantity, type, expiry_date, created_at)
+    VALUES ($product_id, $quantity, 'IN', '$expiry_date', NOW())
+    ");
 }
 
-// Fetch all products
+// Fetch products
 $result = $conn->query("SELECT * FROM products");
+
 
 // Include sidebar based on role
 if (isset($_SESSION['role']) && $_SESSION['role'] === 'staff') {
@@ -338,7 +314,23 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'staff') {
                     <p><strong>₱{$row['selling_price']}</strong></p>
                     <p class='status {$statusClass}'>Status: {$row['status']}</p>
                     <div class='action-buttons'>
-                        <button class='edit-btn' onclick=\"openEditModal('{$row['product_id']}', '{$row['product_name']}', '{$row['description']}', '{$row['selling_price']}', '{$row['status']}')\">✏ Edit</button>
+                        <button class='edit-btn' onclick=\"openEditModal(
+'".$row['product_id']."',
+'".htmlspecialchars($row['product_name'], ENT_QUOTES)."',
+'".htmlspecialchars($row['description'], ENT_QUOTES)."',
+'".htmlspecialchars($row['category'], ENT_QUOTES)."',
+'".htmlspecialchars($row['brand'], ENT_QUOTES)."',
+'".htmlspecialchars($row['supplier'], ENT_QUOTES)."',
+'".htmlspecialchars($row['batch_number'], ENT_QUOTES)."',
+'".$row['quantity']."',
+'".$row['reorder_level']."',
+'".$row['cost_price']."',
+'".$row['selling_price']."',
+'".$row['expiry_date']."',
+'".htmlspecialchars($row['storage_location'], ENT_QUOTES)."',
+'".$row['status']."',
+'".$row['image']."'
+)\">✏ Edit</button>
                         <form method='POST' style='display:inline;' onsubmit=\"return confirm('Delete this product?');\">
                             <input type='hidden' name='product_id' value='{$row['product_id']}'>
                             <button type='submit' name='delete_product' class='delete-btn'>🗑 Delete</button>
@@ -442,21 +434,12 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'staff') {
         <label for="edit_batch">Batch Number</label>
         <input type="text" name="batch_number" id="edit_batch">
 
-        <label for="edit_quantity">Quantity</label>
-        <input type="number" name="quantity" id="edit_quantity">
-
-        <label for="edit_reorder">Reorder Level</label>
-        <input type="number" name="reorder_level" id="edit_reorder">
-
         <label for="edit_cost">Cost Price</label>
         <input type="number" step="0.01" name="cost_price" id="edit_cost">
 
         <label for="edit_selling">Selling Price</label>
         <input type="number" step="0.01" name="selling_price" id="edit_selling">
-
-        <label for="edit_expiry">Expiry Date</label>
-        <input type="date" name="expiry_date" id="edit_expiry">
-
+       
         <label for="edit_location">Storage Location</label>
         <input type="text" name="storage_location" id="edit_location">
 
@@ -465,9 +448,6 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'staff') {
           <option value="available">Available</option>
           <option value="not available">Not Available</option>
         </select>
-
-        <label for="edit_image">Change Image</label>
-        <input type="file" name="image" id="edit_image" accept="image/*">
 
         <button type="submit" name="update_product">Save Changes</button>
       </form>
@@ -484,27 +464,24 @@ if (isset($_SESSION['role']) && $_SESSION['role'] === 'staff') {
 
   // --- Edit Product Modal ---
   const editModal = document.getElementById('editProductModal');
-  function openEditModal(
-      id, name, desc, category, brand, supplier, batch, quantity,
-      reorder, cost, selling, expiry, location, status
-  ) {
-      document.getElementById('edit_id').value = id;
-      document.getElementById('edit_name').value = name;
-      document.getElementById('edit_description').value = desc;
-      document.getElementById('edit_category').value = category;
-      document.getElementById('edit_brand').value = brand;
-      document.getElementById('edit_supplier').value = supplier;
-      document.getElementById('edit_batch').value = batch;
-      document.getElementById('edit_quantity').value = quantity;
-      document.getElementById('edit_reorder').value = reorder;
-      document.getElementById('edit_cost').value = cost;
-      document.getElementById('edit_selling').value = selling;
-      document.getElementById('edit_expiry').value = expiry;
-      document.getElementById('edit_location').value = location;
-      document.getElementById('edit_status').value = status;
+ function openEditModal(
+    id, name, desc, category, brand, supplier, batch, quantity,
+    reorder, cost, selling, expiry, location, status, image
+) {
+    document.getElementById('edit_id').value = id;
+    document.getElementById('edit_name').value = name;
+    document.getElementById('edit_description').value = desc;
+    document.getElementById('edit_category').value = category;
+    document.getElementById('edit_brand').value = brand;
+    document.getElementById('edit_supplier').value = supplier;
+    document.getElementById('edit_batch').value = batch;
+    document.getElementById('edit_cost').value = cost;
+    document.getElementById('edit_selling').value = selling;
+    document.getElementById('edit_location').value = location;
+    document.getElementById('edit_status').value = status;
 
-      editModal.style.display = 'flex';
-  }
+    editModal.style.display = 'flex';
+}
   function closeEditModal() { editModal.style.display = 'none'; }
 
   // --- Close modals when clicking outside ---
